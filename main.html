@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF to Image Converter (Client-Side)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: auto; }
+    #preview canvas { margin: 10px 0; border: 1px solid #ccc; }
+    #drop-area {
+      border: 2px dashed #ccc;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+    #drop-area.dragover {
+      background: #f0f8ff;
+      border-color: #007bff;
+    }
+    #controls {
+      margin-top: 10px;
+    }
+    #download-zip {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>📄 PDF to Image (Client-Side)</h2>
+  <p>Select a PDF by browsing or dragging it below to convert pages into images directly in your browser.</p>
+
+  <div id="drop-area">
+    <p>📂 Drag & Drop PDF Here or Click to Browse</p>
+    <input type="file" id="upload" accept="application/pdf" style="display:none;">
+  </div>
+
+  <div id="controls">
+    <label>Image Format:
+      <select id="format">
+        <option value="png">PNG</option>
+        <option value="jpeg">JPG</option>
+        <option value="webp">WebP</option>
+      </select>
+    </label>
+    <label style="margin-left: 10px;">Scale:
+      <select id="scale">
+        <option value="1">100%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5" selected>150%</option>
+        <option value="2">200%</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="preview"></div>
+  <button id="download-zip" style="display:none;">Download All as ZIP</button>
+
+  <script>
+    const upload = document.getElementById('upload');
+    const dropArea = document.getElementById('drop-area');
+    const preview = document.getElementById('preview');
+    const zipButton = document.getElementById('download-zip');
+    const formatSelect = document.getElementById('format');
+    const scaleSelect = document.getElementById('scale');
+    let zipImages = [];
+    let zipFilename = 'pdf-pages.zip';
+
+    dropArea.addEventListener('click', () => upload.click());
+
+    dropArea.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropArea.classList.add('dragover');
+    });
+
+    dropArea.addEventListener('dragleave', () => {
+      dropArea.classList.remove('dragover');
+    });
+
+    dropArea.addEventListener('drop', e => {
+      e.preventDefault();
+      dropArea.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) processPDF(file);
+    });
+
+    upload.addEventListener('change', () => {
+      const file = upload.files[0];
+      if (file) processPDF(file);
+    });
+
+    async function processPDF(file) {
+      if (!file || file.type !== 'application/pdf') return alert('Please upload a valid PDF file.');
+
+      zipFilename = file.name.replace(/\.pdf$/i, '') + '-pages.zip';
+
+      const fileReader = new FileReader();
+      fileReader.onload = async function() {
+        const typedarray = new Uint8Array(this.result);
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+
+        preview.innerHTML = '';
+        zipImages = [];
+
+        const format = formatSelect.value;
+        const scale = parseFloat(scaleSelect.value);
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+          const imgData = canvas.toDataURL(`image/${format}`);
+          zipImages.push({ name: `page-${pageNum}.${format}`, dataUrl: imgData });
+
+          const link = document.createElement('a');
+          link.href = imgData;
+          link.download = `page-${pageNum}.${format}`;
+          link.textContent = `Download Page ${pageNum}`;
+          link.style.display = 'block';
+          link.style.marginBottom = '10px';
+
+          preview.appendChild(canvas);
+          preview.appendChild(link);
+        }
+        zipButton.style.display = 'inline-block';
+      };
+      fileReader.readAsArrayBuffer(file);
+    }
+
+    zipButton.addEventListener('click', async () => {
+      const zip = new JSZip();
+      zipImages.forEach(({ name, dataUrl }) => {
+        const base64 = dataUrl.split(',')[1];
+        zip.file(name, base64, { base64: true });
+      });
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, zipFilename);
+    });
+  </script>
+</body>
+</html>
